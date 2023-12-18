@@ -20,7 +20,7 @@ resource "aws_launch_template" "main" {
 
     tags = merge(
       var.tags,
-      { Name = "${var.component}-${var.env}" }
+      { Name = "${var.component}-${var.env}", Monitor = "yes"}
     )
   }
 
@@ -44,8 +44,20 @@ resource "aws_autoscaling_group" "main" {
   }
   tag {
     key                 = "Name"
-    propagate_at_launch = false
+    propagate_at_launch = true
     value               = "${var.component}-${var.env}"
+  }
+}
+
+resource "aws_autoscaling_policy" "asg-cpu-rule" {
+  name                   = "CPULoadDetect"
+  autoscaling_group_name = aws_autoscaling_group.main.name
+  policy_type            = "TargetTrackingScaling"
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+    target_value = 40.0
   }
 }
 
@@ -67,6 +79,13 @@ resource "aws_security_group" "main" {
     to_port          = var.port
     protocol         = "tcp"
     cidr_blocks      = var.allow_app_to
+  }
+  ingress {
+    description      = "PROMETHEUS"
+    from_port        = 9100
+    to_port          = 9100
+    protocol         = "tcp"
+    cidr_blocks      = var.monitoring_nodes
   }
 
   egress {
@@ -93,6 +112,7 @@ resource "aws_lb_target_group" "main" {
     unhealthy_threshold = 5
     interval = 5
     timeout = 4
+    path = "/health"
   }
   tags = merge(
     var.tags,
